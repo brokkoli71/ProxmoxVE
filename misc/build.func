@@ -65,37 +65,14 @@ root_check() {
 }
 
 # This function checks the version of Proxmox Virtual Environment (PVE) and exits if the version is not supported.
-# Supported: Proxmox VE 8.0.x – 8.9.x and 9.0 (NOT 9.1+)
 pve_check() {
-  local PVE_VER
-  PVE_VER="$(pveversion | awk -F'/' '{print $2}' | awk -F'-' '{print $1}')"
-
-  # Check for Proxmox VE 8.x: allow 8.0–8.9
-  if [[ "$PVE_VER" =~ ^8\.([0-9]+) ]]; then
-    local MINOR="${BASH_REMATCH[1]}"
-    if ((MINOR < 0 || MINOR > 9)); then
-      msg_error "This version of Proxmox VE is not supported."
-      msg_error "Supported: Proxmox VE version 8.0 – 8.9"
-      exit 1
-    fi
-    return 0
+  if ! pveversion | grep -Eq "pve-manager/8\.[0-4](\.[0-9]+)*"; then
+    msg_error "${CROSS}${RD}This version of Proxmox Virtual Environment is not supported"
+    echo -e "Requires Proxmox Virtual Environment Version 8.1 or later."
+    echo -e "Exiting..."
+    sleep 2
+    exit
   fi
-
-  # Check for Proxmox VE 9.x: allow ONLY 9.0
-  if [[ "$PVE_VER" =~ ^9\.([0-9]+) ]]; then
-    local MINOR="${BASH_REMATCH[1]}"
-    if ((MINOR != 0)); then
-      msg_error "This version of Proxmox VE is not yet supported."
-      msg_error "Supported: Proxmox VE version 9.0"
-      exit 1
-    fi
-    return 0
-  fi
-
-  # All other unsupported versions
-  msg_error "This version of Proxmox VE is not supported."
-  msg_error "Supported versions: Proxmox VE 8.0 – 8.x or 9.0"
-  exit 1
 }
 
 # When a node is running tens of containers, it's possible to exceed the kernel's cryptographic key storage allocations.
@@ -215,6 +192,7 @@ base_settings() {
   GATE=""
   APT_CACHER=""
   APT_CACHER_IP=""
+  #DISABLEIP6="no"
   MTU=""
   SD=""
   NS=""
@@ -249,18 +227,6 @@ write_config() {
   # This function writes the configuration to a file.
   if whiptail --backtitle "Proxmox VE Helper Scripts" --defaultno --title "Write configfile" --yesno "Do you want to write the selections to a config file?" 10 60; then
     FILEPATH="/opt/community-scripts/${NSAPP}.conf"
-    [[ "$GATE" =~ ",gw=" ]] && local GATE="${GATE##,gw=}"
-
-    # Strip prefixes from parameters for config file storage
-    local SD_VALUE="${SD}"
-    local NS_VALUE="${NS}"
-    local MAC_VALUE="${MAC}"
-    local VLAN_VALUE="${VLAN}"
-    [[ "$SD" =~ ^-searchdomain= ]] && SD_VALUE="${SD#-searchdomain=}"
-    [[ "$NS" =~ ^-nameserver= ]] && NS_VALUE="${NS#-nameserver=}"
-    [[ "$MAC" =~ ^,hwaddr= ]] && MAC_VALUE="${MAC#,hwaddr=}"
-    [[ "$VLAN" =~ ^,tag= ]] && VLAN_VALUE="${VLAN#,tag=}"
-
     if [[ ! -f $FILEPATH ]]; then
       cat <<EOF >"$FILEPATH"
 # ${NSAPP} Configuration File
@@ -270,30 +236,25 @@ CT_TYPE="${CT_TYPE}"
 DISK_SIZE="${DISK_SIZE}"
 CORE_COUNT="${CORE_COUNT}"
 RAM_SIZE="${RAM_SIZE}"
-VERBOSE="${VERBOSE}"
-PW="${PW##-password }"
-#CT_ID=$NEXTID
 HN="${HN}"
 BRG="${BRG}"
-NET="${NET}"
-IPV6_METHOD="${IPV6_METHOD:-none}"
-# Set this only if using "IPV6_METHOD=static"
-#IPV6STATIC="fd00::1234/64"
-
-GATE="${GATE:-none}"
 APT_CACHER_IP="${APT_CACHER_IP:-none}"
-MTU="${MTU:-1500}"
-SD="${SD_VALUE:-none}"
-NS="${NS_VALUE:-none}"
-MAC="${MAC_VALUE:-none}"
-VLAN="${VLAN_VALUE:-none}"
+DISABLEIP6=""
+PW='${PW:-none}'
 SSH="${SSH}"
 SSH_AUTHORIZED_KEY="${SSH_AUTHORIZED_KEY}"
+VERBOSE="${VERBOSE}"
 TAGS="${TAGS:-none}"
-ENABLE_FUSE="$ENABLE_FUSE"
-ENABLE_TUN="$ENABLE_TUN"
-EOF
+VLAN="${VLAN:-none}"
+MTU="${MTU:-1500}"
+GATE="${GATE:-none}"
+SD="${SD:-none}"
+MAC="${MAC:-none}"
+NS="${NS:-none}"
+NET="${NET}"
+FUSE="${ENABLE_FUSE}"
 
+EOF
       echo -e "${INFO}${BOLD}${GN}Writing configuration to ${FILEPATH}${CL}"
     else
       echo -e "${INFO}${BOLD}${RD}Configuration file already exists at ${FILEPATH}${CL}"
@@ -307,29 +268,24 @@ CT_TYPE="${CT_TYPE}"
 DISK_SIZE="${DISK_SIZE}"
 CORE_COUNT="${CORE_COUNT}"
 RAM_SIZE="${RAM_SIZE}"
-VERBOSE="${VERBOSE}"
-PW="${PW##-password }"
-#CT_ID=$NEXTID
 HN="${HN}"
 BRG="${BRG}"
-NET="${NET}"
-IPV6_METHOD="${IPV6_METHOD:-none}"
-
-# Set this only if using "IPV6_METHOD=static"
-#IPV6STATIC="fd00::1234/64"
-
-GATE="${GATE:-none}"
 APT_CACHER_IP="${APT_CACHER_IP:-none}"
-MTU="${MTU:-1500}"
-SD="${SD_VALUE:-none}"
-NS="${NS_VALUE:-none}"
-MAC="${MAC_VALUE:-none}"
-VLAN="${VLAN_VALUE:-none}"
+DISABLEIP6=""
+PW='${PW:-none}'
 SSH="${SSH}"
 SSH_AUTHORIZED_KEY="${SSH_AUTHORIZED_KEY}"
+VERBOSE="${VERBOSE}"
 TAGS="${TAGS:-none}"
-ENABLE_FUSE="$ENABLE_FUSE"
-ENABLE_TUN="$ENABLE_TUN"
+VLAN="${VLAN:-none}"
+MTU="${MTU:-1500}"
+GATE="${GATE:-none}"
+SD="${SD:-none}"
+MAC="${MAC:-none}"
+NS="${NS:-none}"
+NET="${NET}"
+FUSE="${ENABLE_FUSE}"
+
 EOF
         echo -e "${INFO}${BOLD}${GN}Writing configuration to ${FILEPATH}${CL}"
       else
@@ -711,6 +667,13 @@ advanced_settings() {
     fi
   fi
 
+  # if (whiptail --backtitle "Proxmox VE Helper Scripts" --defaultno --title "IPv6" --yesno "Disable IPv6?" 10 58); then
+  #   DISABLEIP6="yes"
+  # else
+  #   DISABLEIP6="no"
+  # fi
+  # echo -e "${DISABLEIPV6}${BOLD}${DGN}Disable IPv6: ${BGN}$DISABLEIP6${CL}"
+
   if MTU1=$(whiptail --backtitle "Proxmox VE Helper Scripts" --inputbox "Set Interface MTU Size (leave blank for default [The MTU of your selected vmbr, default is 1500])" 8 58 --title "MTU SIZE" 3>&1 1>&2 2>&3); then
     if [ -z "$MTU1" ]; then
       MTU1="Default"
@@ -818,36 +781,7 @@ advanced_settings() {
 
   if (whiptail --backtitle "Proxmox VE Helper Scripts" --title "ADVANCED SETTINGS COMPLETE" --yesno "Ready to create ${APP} LXC?" 10 58); then
     echo -e "${CREATING}${BOLD}${RD}Creating a ${APP} LXC using the above advanced settings${CL}"
-
-    # Strip prefixes from DNS parameters for config file storage
-    local SD_VALUE="$SD"
-    local NS_VALUE="$NS"
-    local MAC_VALUE="$MAC"
-    local VLAN_VALUE="$VLAN"
-    [[ "$SD" =~ ^-searchdomain= ]] && SD_VALUE="${SD#-searchdomain=}"
-    [[ "$NS" =~ ^-nameserver= ]] && NS_VALUE="${NS#-nameserver=}"
-    [[ "$MAC" =~ ^,hwaddr= ]] && MAC_VALUE="${MAC#,hwaddr=}"
-    [[ "$VLAN" =~ ^,tag= ]] && VLAN_VALUE="${VLAN#,tag=}"
-
-    # Temporarily store original values
-    local SD_ORIG="$SD"
-    local NS_ORIG="$NS"
-    local MAC_ORIG="$MAC"
-    local VLAN_ORIG="$VLAN"
-
-    # Set clean values for config file writing
-    SD="$SD_VALUE"
-    NS="$NS_VALUE"
-    MAC="$MAC_VALUE"
-    VLAN="$VLAN_VALUE"
-
     write_config
-
-    # Restore original formatted values for container creation
-    SD="$SD_ORIG"
-    NS="$NS_ORIG"
-    MAC="$MAC_ORIG"
-    VLAN="$VLAN_ORIG"
   else
     clear
     header_info
@@ -881,6 +815,7 @@ DIAGNOSTICS=yes
 #"ram_size"
 #"os_type"
 #"os_version"
+#"disableip6"
 #"nsapp"
 #"method"
 #"pve_version"
@@ -907,6 +842,7 @@ DIAGNOSTICS=no
 #"ram_size"
 #"os_type"
 #"os_version"
+#"disableip6"
 #"nsapp"
 #"method"
 #"pve_version"
@@ -939,23 +875,19 @@ install_script() {
   header_info
   while true; do
 
-    TMP_CHOICE=$(whiptail --backtitle "Proxmox VE Helper Scripts" \
-      --title "SETTINGS" \
-      --menu "Choose an option:" 20 60 6 \
+    CHOICE=$(whiptail --backtitle "Proxmox VE Helper Scripts" --title "SETTINGS" --menu "Choose an option:" \
+      18 60 6 \
       "1" "Default Settings" \
       "2" "Default Settings (with verbose)" \
       "3" "Advanced Settings" \
       "4" "Use Config File" \
       "5" "Diagnostic Settings" \
-      "6" "Exit" \
-      --default-item "1" 3>&1 1>&2 2>&3) || true
+      "6" "Exit" --nocancel --default-item "1" 3>&1 1>&2 2>&3)
 
-    if [ -z "$TMP_CHOICE" ]; then
-      echo -e "\n${CROSS}${RD}Menu canceled. Exiting script.${CL}\n"
+    if [ $? -ne 0 ]; then
+      echo -e "${CROSS}${RD} Menu canceled. Exiting.${CL}"
       exit 0
     fi
-
-    CHOICE="$TMP_CHOICE"
 
     case $CHOICE in
     1)
@@ -1011,11 +943,11 @@ install_script() {
 
       ;;
     6)
-      echo -e "\n${CROSS}${RD}Script terminated. Have a great day!${CL}\n"
+      echo -e "${CROSS}${RD}Exiting.${CL}"
       exit 0
       ;;
     *)
-      echo -e "\n${CROSS}${RD}Invalid option, please try again.${CL}\n"
+      echo -e "${CROSS}${RD}Invalid option, please try again.${CL}"
       ;;
     esac
   done
@@ -1030,9 +962,10 @@ check_container_resources() {
   if [[ "$current_ram" -lt "$var_ram" ]] || [[ "$current_cpu" -lt "$var_cpu" ]]; then
     echo -e "\n${INFO}${HOLD} ${GN}Required: ${var_cpu} CPU, ${var_ram}MB RAM ${CL}| ${RD}Current: ${current_cpu} CPU, ${current_ram}MB RAM${CL}"
     echo -e "${YWB}Please ensure that the ${APP} LXC is configured with at least ${var_cpu} vCPU and ${var_ram} MB RAM for the build process.${CL}\n"
-    echo -ne "${INFO}${HOLD} May cause data loss! ${INFO} Continue update with under-provisioned LXC? [y/N] "
+    echo -ne "${INFO}${HOLD} May cause data loss! ${INFO} Continue update with under-provisioned LXC? <yes/No>  "
     read -r prompt
-    if [[ ! "${prompt,,}" =~ ^(y|yes)$ ]]; then
+    # Check if the input is 'yes', otherwise exit with status 1
+    if [[ ! ${prompt,,} =~ ^(yes)$ ]]; then
       echo -e "${CROSS}${HOLD} ${YWB}Exiting based on user input.${CL}"
       exit 1
     fi
@@ -1049,9 +982,10 @@ check_container_storage() {
   if ((usage > 80)); then
     # Prompt the user for confirmation to continue
     echo -e "${INFO}${HOLD} ${YWB}Warning: Storage is dangerously low (${usage}%).${CL}"
-    echo -ne "Continue anyway? [y/N] "
+    echo -ne "Continue anyway? <y/N>  "
     read -r prompt
-    if [[ ! "${prompt,,}" =~ ^(y|yes)$ ]]; then
+    # Check if the input is 'y' or 'yes', otherwise exit with status 1
+    if [[ ! ${prompt,,} =~ ^(y|yes)$ ]]; then
       echo -e "${CROSS}${HOLD}${YWB}Exiting based on user input.${CL}"
       exit 1
     fi
@@ -1130,6 +1064,7 @@ build_container() {
   export CACHER="$APT_CACHER"
   export CACHER_IP="$APT_CACHER_IP"
   export tz="$timezone"
+  #export DISABLEIPV6="$DISABLEIP6"
   export APPLICATION="$APP"
   export app="$NSAPP"
   export PASSWORD="$PW"
@@ -1160,6 +1095,9 @@ build_container() {
   bash -c "$(curl -fsSL https://raw.githubusercontent.com/community-scripts/ProxmoxVE/main/misc/create_lxc.sh)" $?
 
   LXC_CONFIG="/etc/pve/lxc/${CTID}.conf"
+
+  # Fix DNS resolution issues by binding host resolv.conf
+  echo "lxc.mount.entry = /etc/resolv.conf etc/resolv.conf none bind,ro,create=file" >>"$LXC_CONFIG"
 
   # USB passthrough for privileged LXC (CT_TYPE=0)
   if [ "$CT_TYPE" == "0" ]; then
@@ -1207,48 +1145,64 @@ EOF
 
     echo ""
     msg_custom "⚙️ " "\e[96m" "Configuring VAAPI passthrough for LXC container"
+
     if [ "$CT_TYPE" != "0" ]; then
       msg_custom "⚠️ " "\e[33m" "Container is unprivileged – VAAPI passthrough may not work without additional host configuration (e.g., idmap)."
     fi
+
     msg_custom "ℹ️ " "\e[96m" "VAAPI enables GPU hardware acceleration (e.g., for video transcoding in Jellyfin or Plex)."
+
     echo ""
     read -rp "➤ Automatically mount all available VAAPI devices? [Y/n]: " VAAPI_ALL
 
     if [[ "$VAAPI_ALL" =~ ^[Yy]$|^$ ]]; then
-      if [ "$CT_TYPE" == "0" ]; then
-        # PRV Container → alles zulässig
-        [[ -e /dev/dri/renderD128 ]] && {
+      # Mount all devices automatically
+      if [[ -e /dev/dri/renderD128 ]]; then
+        echo "lxc.cgroup2.devices.allow: c 226:128 rwm" >>"$LXC_CONFIG"
+        echo "lxc.mount.entry: /dev/dri/renderD128 dev/dri/renderD128 none bind,optional,create=file" >>"$LXC_CONFIG"
+      fi
+      if [[ -e /dev/dri/card0 ]]; then
+        echo "lxc.cgroup2.devices.allow: c 226:0 rwm" >>"$LXC_CONFIG"
+
+        echo "lxc.mount.entry: /dev/dri/card0 dev/dri/card0 none bind,optional,create=file" >>"$LXC_CONFIG"
+      fi
+      if [[ -e /dev/fb0 ]]; then
+        echo "lxc.cgroup2.devices.allow: c 29:0 rwm" >>"$LXC_CONFIG"
+        echo "lxc.mount.entry: /dev/fb0 dev/fb0 none bind,optional,create=file" >>"$LXC_CONFIG"
+      fi
+      if [[ -d /dev/dri ]]; then
+        echo "lxc.mount.entry: /dev/dri dev/dri none bind,optional,create=dir" >>"$LXC_CONFIG"
+      fi
+    else
+      # Manual selection per device
+      if [[ -e /dev/dri/renderD128 ]]; then
+        read -rp "➤ Mount /dev/dri/renderD128 (GPU rendering)? [y/N]: " MOUNT_D128
+        if [[ "$MOUNT_D128" =~ ^[Yy]$ ]]; then
           echo "lxc.cgroup2.devices.allow: c 226:128 rwm" >>"$LXC_CONFIG"
           echo "lxc.mount.entry: /dev/dri/renderD128 dev/dri/renderD128 none bind,optional,create=file" >>"$LXC_CONFIG"
-        }
-        [[ -e /dev/dri/card0 ]] && {
+        fi
+      fi
+
+      if [[ -e /dev/dri/card0 ]]; then
+        read -rp "➤ Mount /dev/dri/card0 (GPU hardware interface)? [y/N]: " MOUNT_CARD0
+        if [[ "$MOUNT_CARD0" =~ ^[Yy]$ ]]; then
           echo "lxc.cgroup2.devices.allow: c 226:0 rwm" >>"$LXC_CONFIG"
           echo "lxc.mount.entry: /dev/dri/card0 dev/dri/card0 none bind,optional,create=file" >>"$LXC_CONFIG"
-        }
-        [[ -e /dev/fb0 ]] && {
+
+        fi
+      fi
+
+      if [[ -e /dev/fb0 ]]; then
+        read -rp "➤ Mount /dev/fb0 (Framebuffer, GUI)? [y/N]: " MOUNT_FB0
+        if [[ "$MOUNT_FB0" =~ ^[Yy]$ ]]; then
           echo "lxc.cgroup2.devices.allow: c 29:0 rwm" >>"$LXC_CONFIG"
           echo "lxc.mount.entry: /dev/fb0 dev/fb0 none bind,optional,create=file" >>"$LXC_CONFIG"
-        }
-        [[ -d /dev/dri ]] && {
-          echo "lxc.mount.entry: /dev/dri dev/dri none bind,optional,create=dir" >>"$LXC_CONFIG"
-        }
-      else
-        # UNPRV Container → nur devX für UI
-        [[ -e /dev/dri/card0 ]] && echo "dev0: /dev/dri/card0,gid=44" >>"$LXC_CONFIG"
-        [[ -e /dev/dri/card1 ]] && echo "dev0: /dev/dri/card1,gid=44" >>"$LXC_CONFIG"
-        [[ -e /dev/dri/renderD128 ]] && echo "dev1: /dev/dri/renderD128,gid=104" >>"$LXC_CONFIG"
+        fi
       fi
-    fi
 
-  fi
-  if [ "$CT_TYPE" == "1" ] && [ "$is_vaapi_app" == "true" ]; then
-    if [[ -e /dev/dri/card0 ]]; then
-      echo "dev0: /dev/dri/card0,gid=44" >>"$LXC_CONFIG"
-    elif [[ -e /dev/dri/card1 ]]; then
-      echo "dev0: /dev/dri/card1,gid=44" >>"$LXC_CONFIG"
-    fi
-    if [[ -e /dev/dri/renderD128 ]]; then
-      echo "dev1: /dev/dri/renderD128,gid=104" >>"$LXC_CONFIG"
+      if [[ -d /dev/dri ]]; then
+        echo "lxc.mount.entry: /dev/dri dev/dri none bind,optional,create=dir" >>"$LXC_CONFIG"
+      fi
     fi
   fi
 
@@ -1263,62 +1217,7 @@ EOF
   # This starts the container and executes <app>-install.sh
   msg_info "Starting LXC Container"
   pct start "$CTID"
-
-  # wait for status 'running'
-  for i in {1..10}; do
-    if pct status "$CTID" | grep -q "status: running"; then
-      msg_ok "Started LXC Container"
-      break
-    fi
-    sleep 1
-    if [ "$i" -eq 10 ]; then
-      msg_error "LXC Container did not reach running state"
-      exit 1
-    fi
-  done
-
-  if [ "$var_os" != "alpine" ]; then
-    msg_info "Waiting for network in LXC container"
-    for i in {1..10}; do
-      # 1. Primary check: ICMP ping (fastest, but may be blocked by ISP/firewall)
-      if pct exec "$CTID" -- ping -c1 -W1 deb.debian.org >/dev/null 2>&1; then
-        msg_ok "Network in LXC is reachable (ping)"
-        break
-      fi
-      # Wait and retry if not reachable yet
-      if [ "$i" -lt 10 ]; then
-        msg_warn "No network in LXC yet (try $i/10) – waiting..."
-        sleep 3
-      else
-        # After 10 unsuccessful ping attempts, try HTTP connectivity via wget as fallback
-        msg_warn "Ping failed 10 times. Trying HTTP connectivity check (wget) as fallback..."
-        if pct exec "$CTID" -- wget -q --spider http://deb.debian.org; then
-          msg_ok "Network in LXC is reachable (wget fallback)"
-        else
-          msg_error "No network in LXC after all checks."
-          read -r -p "Set fallback DNS (1.1.1.1/8.8.8.8)? [y/N]: " choice
-          case "$choice" in
-          [yY]*)
-            pct set "$CTID" --nameserver 1.1.1.1
-            pct set "$CTID" --nameserver 8.8.8.8
-            # Final attempt with wget after DNS change
-            if pct exec "$CTID" -- wget -q --spider http://deb.debian.org; then
-              msg_ok "Network reachable after DNS fallback"
-            else
-              msg_error "Still no network/DNS in LXC! Aborting customization."
-              exit_script
-            fi
-            ;;
-          *)
-            msg_error "Aborted by user – no DNS fallback set."
-            exit_script
-            ;;
-          esac
-        fi
-        break
-      fi
-    done
-  fi
+  msg_ok "Started LXC Container"
 
   msg_info "Customizing LXC Container"
   : "${tz:=Etc/UTC}"
@@ -1328,7 +1227,7 @@ EOF
 http://dl-cdn.alpinelinux.org/alpine/latest-stable/main
 http://dl-cdn.alpinelinux.org/alpine/latest-stable/community
 EOF'
-    pct exec "$CTID" -- ash -c "apk add bash newt curl openssh nano mc ncurses jq >/dev/null"
+    pct exec "$CTID" -- ash -c "apk add bash newt curl openssh nano mc ncurses >/dev/null"
   else
     sleep 3
     pct exec "$CTID" -- bash -c "sed -i '/$LANG/ s/^# //' /etc/locale.gen"
@@ -1346,11 +1245,11 @@ EOF'
       msg_warn "Skipping timezone setup – zone '$tz' not found in container"
     fi
 
-    pct exec "$CTID" -- bash -c "apt-get update >/dev/null && apt-get install -y sudo curl mc gnupg2 jq >/dev/null"
+    pct exec "$CTID" -- bash -c "apt-get update >/dev/null && apt-get install -y sudo curl mc gnupg2 >/dev/null"
   fi
   msg_ok "Customized LXC Container"
 
-  lxc-attach -n "$CTID" -- bash -c "$(curl -fsSL https://raw.githubusercontent.com/community-scripts/ProxmoxVE/main/install/${var_install}.sh)"
+  lxc-attach -n "$CTID" -- bash -c "$(curl -fsSL https://raw.githubusercontent.com/brokkoli71/ProxmoxVE/main/install/${var_install}.sh)"
 }
 
 # This function sets the description of the container.
