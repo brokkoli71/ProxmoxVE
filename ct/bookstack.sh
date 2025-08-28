@@ -39,6 +39,8 @@ function update_script() {
     msg_ok "Backup finished"
 
     fetch_and_deploy_gh_release "bookstack" "BookStackApp/BookStack"
+    PHP_MODULE="ldap,tidy,bz2,mysqli" PHP_FPM="YES" PHP_APACHE="YES" PHP_VERSION="8.3" setup_php
+    setup_composer
 
     msg_info "Restoring backup"
     cp /opt/bookstack-backup/.env /opt/bookstack/.env

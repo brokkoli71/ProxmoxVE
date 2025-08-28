@@ -19,7 +19,8 @@ $STD apt-get install -y \
   make
 msg_ok "Installed Dependencies"
 
-PHP_MODULE="fpm, ldap, tidy, bz2, mysql" PHP_FPM="YES" PHP_APACHE="YES" PHP_VERSION="8.2" setup_php
+PHP_MODULE="ldap,tidy,bz2,mysqli" PHP_FPM="YES" PHP_APACHE="YES" PHP_VERSION="8.3" setup_php
+
 setup_composer
 setup_mariadb
 
@@ -56,7 +57,7 @@ chmod -R 755 /opt/bookstack /opt/bookstack/bootstrap/cache /opt/bookstack/public
 chmod -R 775 /opt/bookstack/storage /opt/bookstack/bootstrap/cache /opt/bookstack/public/uploads
 chmod -R 640 /opt/bookstack/.env
 $STD a2enmod rewrite
-$STD a2enmod php8.2
+$STD a2enmod php8.3
 msg_ok "Configured Bookstack"
 
 msg_info "Creating Service"

@@ -30,8 +30,12 @@ $STD apt-get install --no-install-recommends -y \
   autoconf \
   build-essential \
   python3-dev \
+  automake \
   cmake \
   jq \
+  libtool \
+  libltdl-dev \
+  libgdk-pixbuf-2.0-dev \
   libbrotli-dev \
   libde265-dev \
   libexif-dev \
@@ -39,36 +43,28 @@ $STD apt-get install --no-install-recommends -y \
   libglib2.0-dev \
   libgsf-1-dev \
   libjpeg62-turbo-dev \
-  librsvg2-dev \
   libspng-dev \
+  liblcms2-dev \
+  libopenexr-dev \
+  libgif-dev \
+  librsvg2-dev \
+  libexpat1 \
+  libgcc-s1 \
+  libgomp1 \
+  liblqr-1-0 \
+  libltdl7 \
+  libmimalloc2.0 \
+  libopenjp2-7 \
   meson \
   ninja-build \
   pkg-config \
   cpanminus \
-  libde265-0 \
-  libexif12 \
-  libexpat1 \
-  libgcc-s1 \
-  libglib2.0-0 \
-  libgomp1 \
-  libgsf-1-114 \
-  liblcms2-dev \
-  liblqr-1-0 \
-  libltdl7 \
-  libmimalloc2.0 \
-  libopenexr-dev \
-  libgif-dev \
-  libopenjp2-7 \
-  librsvg2-2 \
-  libspng0 \
   mesa-utils \
   mesa-va-drivers \
   mesa-vulkan-drivers \
   ocl-icd-libopencl1 \
   tini \
   zlib1g
-$STD apt-get install -y \
-  libgdk-pixbuf-2.0-dev librsvg2-dev libtool
 curl -fsSL https://repo.jellyfin.org/jellyfin_team.gpg.key | gpg --dearmor -o /etc/apt/keyrings/jellyfin.gpg
 DPKG_ARCHITECTURE="$(dpkg --print-architecture)"
 export DPKG_ARCHITECTURE
@@ -110,11 +106,13 @@ if [[ ${prompt,,} =~ ^(y|yes)$ ]]; then
   msg_ok "Installed OpenVINO dependencies"
 fi
 
-NODE_VERSION="22" setup_nodejs
+PNPM_VERSION="$(curl -fsSL "https://raw.githubusercontent.com/immich-app/immich/refs/heads/main/package.json" | jq -r '.packageManager | split("@")[1]')"
+NODE_VERSION="22" NODE_MODULE="pnpm@${PNPM_VERSION}" setup_nodejs
 PG_VERSION="16" PG_MODULES="pgvector" setup_postgresql
 
 msg_info "Setting up Postgresql Database"
-VCHORD_RELEASE="$(curl -fsSL https://api.github.com/repos/tensorchord/vectorchord/releases/latest | grep "tag_name" | awk '{print substr($2, 2, length($2)-3) }')"
+VCHORD_RELEASE="0.4.3"
+# VCHORD_RELEASE="$(curl -fsSL https://api.github.com/repos/tensorchord/vectorchord/releases/latest | grep "tag_name" | awk '{print substr($2, 2, length($2)-3) }')"
 curl -fsSL "https://github.com/tensorchord/VectorChord/releases/download/${VCHORD_RELEASE}/postgresql-16-vchord_${VCHORD_RELEASE}-1_amd64.deb" -o vchord.deb
 $STD apt install -y ./vchord.deb
 rm vchord.deb
@@ -147,13 +145,13 @@ $STD apt-get install -t testing --no-install-recommends -y \
   libhwy1t64 \
   libdav1d-dev \
   libhwy-dev \
-  libwebp-dev
+  libwebp-dev \
+  libaom-dev
 if [[ -f ~/.openvino ]]; then
   $STD apt-get install -t testing -y patchelf
 fi
 msg_ok "Packages from Testing Repo Installed"
 
-# Fix default DB collation issue after libc update
 $STD sudo -u postgres psql -c "ALTER DATABASE postgres REFRESH COLLATION VERSION;"
 $STD sudo -u postgres psql -c "ALTER DATABASE $DB_NAME REFRESH COLLATION VERSION;"
 
@@ -218,7 +216,7 @@ $STD cmake --preset=release-noplugins \
   -DWITH_LIBSHARPYUV=ON \
   -DWITH_LIBDE265=ON \
   -DWITH_AOM_DECODER=OFF \
-  -DWITH_AOM_ENCODER=OFF \
+  -DWITH_AOM_ENCODER=ON \
   -DWITH_X265=OFF \
   -DWITH_EXAMPLES=OFF \
   ..
@@ -280,30 +278,41 @@ APP_DIR="${INSTALL_DIR}/app"
 ML_DIR="${APP_DIR}/machine-learning"
 GEO_DIR="${INSTALL_DIR}/geodata"
 mkdir -p "$INSTALL_DIR"
-mkdir -p {"${APP_DIR}","${UPLOAD_DIR}","${GEO_DIR}","${ML_DIR}","${INSTALL_DIR}"/cache}
+mkdir -p {"${APP_DIR}","${UPLOAD_DIR}","${GEO_DIR}","${INSTALL_DIR}"/cache}
 
-fetch_and_deploy_gh_release "immich" "immich-app/immich" "tarball" "latest" "$SRC_DIR"
+fetch_and_deploy_gh_release "immich" "immich-app/immich" "tarball" "v1.139.4" "$SRC_DIR"
 
 msg_info "Installing ${APPLICATION} (more patience please)"
 
 cd "$SRC_DIR"/server
-$STD npm install -g node-gyp node-pre-gyp
-$STD npm ci
-$STD npm run build
-$STD npm prune --omit=dev --omit=optional
-cd "$SRC_DIR"/open-api/typescript-sdk
-$STD npm ci
-$STD npm run build
-cd "$SRC_DIR"/web
-$STD npm ci
-$STD npm run build
+export COREPACK_ENABLE_DOWNLOAD_PROMPT=0
+export CI=1
+corepack enable
+
+# server build
+export SHARP_IGNORE_GLOBAL_LIBVIPS=true
+$STD pnpm --filter immich --frozen-lockfile build
+unset SHARP_IGNORE_GLOBAL_LIBVIPS
+export SHARP_FORCE_GLOBAL_LIBVIPS=true
+$STD pnpm --filter immich --frozen-lockfile --prod --no-optional deploy "$APP_DIR"
+cp "$APP_DIR"/package.json "$APP_DIR"/bin
+sed -i 's|^start|./start|' "$APP_DIR"/bin/immich-admin
+
+# openapi & web build
 cd "$SRC_DIR"
-cp -a server/{node_modules,dist,bin,resources,package.json,package-lock.json,start*.sh} "$APP_DIR"/
+$STD pnpm --filter @immich/sdk --filter immich-web --frozen-lockfile --force install
+$STD pnpm --filter @immich/sdk --filter immich-web build
 cp -a web/build "$APP_DIR"/www
 cp LICENSE "$APP_DIR"
-msg_ok "Installed Immich Web Components"
+
+# cli build
+$STD pnpm --filter @immich/sdk --filter @immich/cli --frozen-lockfile install
+$STD pnpm --filter @immich/sdk --filter @immich/cli build
+$STD pnpm --filter @immich/cli --prod --no-optional deploy "$APP_DIR"/cli
+msg_ok "Installed Immich Server and Web Components"
 
 cd "$SRC_DIR"/machine-learning
+mkdir -p "$ML_DIR"
 export VIRTUAL_ENV="${ML_DIR}/ml-venv"
 $STD uv venv "$VIRTUAL_ENV"
 if [[ -f ~/.openvino ]]; then
@@ -324,17 +333,11 @@ fi
 ln -sf "$APP_DIR"/resources "$INSTALL_DIR"
 
 cd "$APP_DIR"
-grep -Rl /usr/src | xargs -n1 sed -i "s|\/usr/src|$INSTALL_DIR|g"
-grep -RlE "'/build'" | xargs -n1 sed -i "s|'/build'|'$APP_DIR'|g"
+grep -rl /usr/src | xargs -n1 sed -i "s|\/usr/src|$INSTALL_DIR|g"
+grep -rlE "'/build'" | xargs -n1 sed -i "s|'/build'|'$APP_DIR'|g"
 sed -i "s@\"/cache\"@\"$INSTALL_DIR/cache\"@g" "$ML_DIR"/immich_ml/config.py
 ln -s "$UPLOAD_DIR" "$APP_DIR"/upload
 ln -s "$UPLOAD_DIR" "$ML_DIR"/upload
-
-msg_info "Installing Immich CLI"
-$STD npm install --build-from-source sharp
-rm -rf "$APP_DIR"/node_modules/@img/sharp-{libvips*,linuxmusl-x64}
-$STD npm i -g @immich/cli
-msg_ok "Installed Immich CLI"
 
 msg_info "Installing GeoNames data"
 cd "$GEO_DIR"
@@ -391,7 +394,16 @@ set +a
 
 python3 -m immich_ml
 EOF
-chmod +x "$ML_DIR"/ml_start.sh
+cat <<EOF >"$APP_DIR"/bin/start.sh
+#!/usr/bin/env bash
+
+set -a
+. ${INSTALL_DIR}/.env
+set +a
+
+/usr/bin/node ${APP_DIR}/dist/main.js "\$@"
+EOF
+chmod +x "$ML_DIR"/ml_start.sh "$APP_DIR"/bin/start.sh
 cat <<EOF >/etc/systemd/system/"${APPLICATION}"-web.service
 [Unit]
 Description=${APPLICATION} Web Service
@@ -442,6 +454,8 @@ systemctl enable -q --now "$APPLICATION"-ml.service "$APPLICATION"-web.service
 msg_ok "Created user, env file, scripts and services"
 
 sed -i "$ a VERSION_ID=12" /etc/os-release # otherwise the motd_ssh function will fail
+cp /etc/debian_version ~/.debian_version.bak
+sed -i 's/.*/13.0/' /etc/debian_version
 motd_ssh
 customize
 

@@ -39,12 +39,15 @@ function update_script() {
     msg_ok "Backed up data"
 
     fetch_and_deploy_gh_release "baikal" "sabre-io/Baikal"
+    setup_composer
 
     msg_info "Configuring Baikal"
     cp -r /opt/baikal-backup/config/baikal.yaml /opt/baikal/config/
     cp -r /opt/baikal-backup/Specific/ /opt/baikal/
     chown -R www-data:www-data /opt/baikal/
     chmod -R 755 /opt/baikal/
+    cd /opt/baikal
+    $STD composer install
     msg_ok "Configured Baikal"
 
     msg_info "Starting Service"
