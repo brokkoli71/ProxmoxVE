@@ -11,7 +11,7 @@ var_cpu="${var_cpu:-1}"
 var_ram="${var_ram:-1024}"
 var_disk="${var_disk:-5}"
 var_os="${var_os:-debian}"
-var_version="${var_version:-12}"
+var_version="${var_version:-13}"
 var_unprivileged="${var_unprivileged:-1}"
 
 header_info "$APP"
@@ -28,37 +28,32 @@ function update_script() {
     exit
   fi
 
-  RELEASE=$(curl -fsSL https://api.github.com/repos/ellite/Wallos/releases/latest | grep "tag_name" | awk '{print substr($2, 3, length($2)-4) }')
-  if [[ ! -f ~/.wallos ]] || [[ "${RELEASE}" != "$(cat ~/.wallos)" ]]; then
+  if check_for_gh_release "wallos" "ellite/Wallos"; then
     msg_info "Creating backup"
     mkdir -p /opt/logos
     mv /opt/wallos/db/wallos.db /opt/wallos.db
     mv /opt/wallos/images/uploads/logos /opt/logos/
     msg_ok "Backup created"
 
-    rm -rf /opt/wallos
-    fetch_and_deploy_gh_release "wallos" "ellite/Wallos" "tarball"
+    CLEAN_INSTALL=1 fetch_and_deploy_gh_release "wallos" "ellite/Wallos" "tarball"
 
-    msg_info "Configuring ${APP}"
+    msg_info "Configuring Wallos"
     rm -rf /opt/wallos/db/wallos.empty.db
     mv /opt/wallos.db /opt/wallos/db/wallos.db
     mv /opt/logos/* /opt/wallos/images/uploads/logos
     if ! grep -q "storetotalyearlycost.php" /opt/wallos.cron; then
-      echo "30 1 * * 1 php /opt/wallos/endpoints/cronjobs/storetotalyearlycost.php >> /var/log/cron/storetotalyearlycost.log 2>&1" >> /opt/wallos.cron
+      echo "30 1 * * 1 php /opt/wallos/endpoints/cronjobs/storetotalyearlycost.php >> /var/log/cron/storetotalyearlycost.log 2>&1" >>/opt/wallos.cron
     fi
     chown -R www-data:www-data /opt/wallos
     chmod -R 755 /opt/wallos
     mkdir -p /var/log/cron
     $STD curl http://localhost/endpoints/db/migrate.php
-    msg_ok "Configured ${APP}"
+    msg_ok "Configured Wallos"
 
     msg_info "Reload Apache2"
     systemctl reload apache2
     msg_ok "Apache2 Reloaded"
-
-    msg_ok "Updated Successfully"
-  else
-    msg_ok "No update required. ${APP} is already at ${RELEASE}"
+    msg_ok "Updated Successfully!"
   fi
   exit
 }

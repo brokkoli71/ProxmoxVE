@@ -14,7 +14,7 @@ network_check
 update_os
 
 msg_info "Installing Dependencies (Patience)"
-$STD apt-get install -y ca-certificates
+$STD apt install -y ca-certificates
 msg_ok "Installed Dependecies"
 
 PG_VERSION="17" setup_postgresql
@@ -114,11 +114,11 @@ NoNewPrivileges=true
 [Install]
 WantedBy=multi-user.target
 EOF
-systemctl enable -q zitadel
+systemctl enable -q --now zitadel
 msg_ok "Created Services"
 
 msg_info "Zitadel initial setup"
-$STD zitadel start-from-init --masterkeyFile /opt/zitadel/.masterkey --config /opt/zitadel/config.yaml
+zitadel start-from-init --masterkeyFile /opt/zitadel/.masterkey --config /opt/zitadel/config.yaml &>/dev/null &
 sleep 60
 kill $(lsof -i | awk '/zitadel/ {print $2}' | head -n1)
 useradd zitadel
@@ -144,6 +144,7 @@ motd_ssh
 customize
 
 msg_info "Cleaning up"
-$STD apt-get -y autoremove
-$STD apt-get -y autoclean
+$STD apt -y autoremove
+$STD apt -y autoclean
+$STD apt -y clean
 msg_ok "Cleaned"

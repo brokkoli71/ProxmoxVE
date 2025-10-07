@@ -11,7 +11,7 @@ var_cpu="${var_cpu:-1}"
 var_ram="${var_ram:-512}"
 var_disk="${var_disk:-2}"
 var_os="${var_os:-debian}"
-var_version="${var_version:-12}"
+var_version="${var_version:-13}"
 var_unprivileged="${var_unprivileged:-1}"
 
 header_info "$APP"
@@ -28,14 +28,9 @@ function update_script() {
     msg_error "No ${APP} Installation Found!"
     exit
   fi
-  if ! command -v jq &>/dev/null; then
-    $STD apt-get install -y jq
-  fi
-  RELEASE=$(curl -fsSL https://api.github.com/repos/Bubka/2FAuth/releases/latest | jq -r '.tag_name' | sed 's/^v//')
-  if [[ "${RELEASE}" != "$(cat ~/.2fauth 2>/dev/null)" ]] || [[ ! -f ~/.2fauth ]]; then
-    msg_info "Updating $APP to ${RELEASE}"
-    $STD apt-get update
-    $STD apt-get -y upgrade
+  if check_for_gh_release "2fauth" "Bubka/2FAuth"; then
+    $STD apt update
+    $STD apt -y upgrade
 
     msg_info "Creating Backup"
     mv "/opt/2fauth" "/opt/2fauth-backup"
@@ -64,18 +59,14 @@ function update_script() {
     $STD systemctl restart nginx
 
     msg_info "Cleaning Up"
-    rm -rf "v${RELEASE}.zip"
     if dpkg -l | grep -q 'php8.2'; then
-      $STD apt-get remove --purge -y php8.2*
+      $STD apt remove --purge -y php8.2*
     fi
-    $STD apt-get -y autoremove
-    $STD apt-get -y autoclean
+    $STD apt -y autoremove
+    $STD apt -y autoclean
+    $STD apt -y clean
     msg_ok "Cleanup Completed"
-
-    echo "${RELEASE}" >/opt/2fauth_version.txt
-    msg_ok "Updated $APP to ${RELEASE}"
-  else
-    msg_ok "No update required. ${APP} is already at ${RELEASE}"
+    msg_ok "Updated Successfully"
   fi
   exit
 }

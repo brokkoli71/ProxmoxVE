@@ -9,7 +9,7 @@ APP="n8n"
 var_tags="${var_tags:-automation}"
 var_cpu="${var_cpu:-2}"
 var_ram="${var_ram:-2048}"
-var_disk="${var_disk:-6}"
+var_disk="${var_disk:-10}"
 var_os="${var_os:-debian}"
 var_version="${var_version:-12}"
 var_unprivileged="${var_unprivileged:-1}"
@@ -41,7 +41,8 @@ EOF
   NODE_VERSION="22" setup_nodejs
 
   msg_info "Updating ${APP} LXC"
-  $STD npm update -g n8n
+  rm -rf /usr/lib/node_modules/.n8n-* /usr/lib/node_modules/n8n
+  $STD npm install -g n8n --force
   systemctl restart n8n
   msg_ok "Updated Successfully"
   exit
