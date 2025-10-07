@@ -28,41 +28,36 @@ function update_script() {
     exit
   fi
 
-  if [[ ! -f ~/.pulse ]]; then
-    msg_error "Old Installation Found! Please recreate the container due big changes in the software."
-    exit 1
-  fi
-
-  RELEASE=$(curl -fsSL https://api.github.com/repos/rcourtman/Pulse/releases/latest | jq -r '.tag_name' | sed 's/^v//')
-  SERVICE_PATH="/etc/systemd/system"
-  if [[ "${RELEASE}" != "$(cat ~/.pulse 2>/dev/null)" ]] || [[ ! -f ~/.pulse ]]; then
-    msg_info "Stopping ${APP}"
+  if check_for_gh_release "pulse" "rcourtman/Pulse"; then
+    SERVICE_PATH="/etc/systemd/system"
+    msg_info "Stopping Services"
     systemctl stop pulse*.service
-    msg_ok "Stopped ${APP}"
+    msg_ok "Stopped Services"
 
     if [[ -f /opt/pulse/pulse ]]; then
       rm -f /opt/pulse/pulse
     fi
 
     fetch_and_deploy_gh_release "pulse" "rcourtman/Pulse" "prebuild" "latest" "/opt/pulse" "*-linux-amd64.tar.gz"
-    chown -R pulse:pulse /etc/pulse /opt/pulse
-    if [[ -f "$SERVICE_PATH"/pulse.service ]]; then
-      mv "$SERVICE_PATH"/pulse.service "$SERVICE_PATH"/pulse-backend.service
+    ln -sf /opt/pulse/bin/pulse /usr/local/bin/pulse
+    mkdir -p /etc/pulse
+    chown pulse:pulse /etc/pulse
+    chown -R pulse:pulse /opt/pulse
+    chmod 700 /etc/pulse
+    if [[ -f "$SERVICE_PATH"/pulse-backend.service ]]; then
+      mv "$SERVICE_PATH"/pulse-backend.service "$SERVICE_PATH"/pulse.service
     fi
     sed -i -e 's|pulse/pulse|pulse/bin/pulse|' \
-      -e 's/^Environment="API.*$//' "$SERVICE_PATH"/pulse-backend.service
+      -e 's/^Environment="API.*$//' "$SERVICE_PATH"/pulse.service
     systemctl daemon-reload
     if grep -q 'pulse-home:/bin/bash' /etc/passwd; then
       usermod -s /usr/sbin/nologin pulse
     fi
 
-    msg_info "Starting ${APP}"
-    systemctl start pulse-backend
-    msg_ok "Started ${APP}"
-
+    msg_info "Starting Services"
+    systemctl start pulse
+    msg_ok "Started Services"
     msg_ok "Updated Successfully"
-  else
-    msg_ok "No update required. ${APP} is already at v${RELEASE}"
   fi
   exit
 }

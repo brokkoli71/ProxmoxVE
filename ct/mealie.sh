@@ -1,5 +1,5 @@
 #!/usr/bin/env bash
-source <(curl -fsSL https://raw.githubusercontent.com/community-scripts/ProxmoxVE/main/misc/build.func)
+source <(curl -fsSL https://raw.githubusercontent.com/brokkoli71/ProxmoxVE/main/misc/build.func)
 # Copyright (c) 2021-2025 community-scripts ORG
 # Author: MickLesk (CanbiZ)
 # License: MIT | https://github.com/community-scripts/ProxmoxVE/raw/main/LICENSE
@@ -28,10 +28,7 @@ function update_script() {
     msg_error "No ${APP} Installation Found!"
     exit
   fi
-
-  RELEASE=$(curl -fsSL https://api.github.com/repos/mealie-recipes/mealie/releases/latest | jq -r '.tag_name | sub("^v"; "")')
-  if [[ "${RELEASE}" != "$(cat ~/.mealie 2>/dev/null)" ]] || [[ ! -f ~/.mealie ]]; then
-
+  if check_for_gh_release "mealie" "mealie-recipes/mealie"; then
     PYTHON_VERSION="3.12" setup_uv
     NODE_MODULE="yarn" NODE_VERSION="20" setup_nodejs
 
@@ -79,10 +76,7 @@ function update_script() {
     msg_info "Starting $APP"
     systemctl start mealie
     msg_ok "Started $APP"
-
-    msg_ok "Update to $RELEASE Successful"
-  else
-    msg_ok "No update required. ${APP} is already at v${RELEASE}"
+    msg_ok "Update Successful"
   fi
   exit
 }

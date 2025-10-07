@@ -1,5 +1,5 @@
 #!/usr/bin/env bash
-source <(curl -fsSL https://raw.githubusercontent.com/community-scripts/ProxmoxVE/main/misc/build.func)
+source <(curl -fsSL https://raw.githubusercontent.com/brokkoli71/ProxmoxVE/main/misc/build.func)
 # Copyright (c) 2021-2025 community-scripts ORG
 # Author: vhsdream
 # License: MIT | https://github.com/community-scripts/ProxmoxVE/raw/main/LICENSE
@@ -30,8 +30,7 @@ function update_script() {
 
   setup_uv
 
-  RELEASE=$(curl -fsSL https://api.github.com/repos/maxdorninger/MediaManager/releases/latest | jq '.tag_name' | sed 's/^v//')
-  if [[ "${RELEASE}" != "$(cat ~/.mediamanager 2>/dev/null)" ]] || [[ ! -f ~/.mediamanager ]]; then
+  if check_for_gh_release "mediamanager" "maxdorninger/MediaManager"; then
     msg_info "Stopping Service"
     systemctl stop mediamanager
     msg_ok "Stopped Service"
@@ -61,10 +60,7 @@ function update_script() {
     msg_info "Starting Service"
     systemctl start mediamanager
     msg_ok "Started Service"
-
     msg_ok "Updated Successfully"
-  else
-    msg_ok "Already up to date"
   fi
   exit
 }

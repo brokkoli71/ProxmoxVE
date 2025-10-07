@@ -15,14 +15,7 @@ update_os
 
 setup_uv
 
-msg_info "Configuring apt and installing dependencies"
-echo "deb http://deb.debian.org/debian testing main contrib" >/etc/apt/sources.list.d/immich.list
-cat <<EOF >/etc/apt/preferences.d/immich
-Package: *
-Pin: release a=testing
-Pin-Priority: -10
-EOF
-
+msg_info "Installing dependencies"
 $STD apt-get update
 $STD apt-get install --no-install-recommends -y \
   git \
@@ -53,25 +46,33 @@ $STD apt-get install --no-install-recommends -y \
   libgomp1 \
   liblqr-1-0 \
   libltdl7 \
-  libmimalloc2.0 \
+  libmimalloc3 \
   libopenjp2-7 \
   meson \
   ninja-build \
   pkg-config \
-  cpanminus \
   mesa-utils \
   mesa-va-drivers \
   mesa-vulkan-drivers \
   ocl-icd-libopencl1 \
   tini \
-  zlib1g
+  zlib1g \
+  libio-compress-brotli-perl \
+  libwebp7 \
+  libwebpdemux2 \
+  libwebpmux3 \
+  libhwy1t64 \
+  libdav1d-dev \
+  libhwy-dev \
+  libwebp-dev \
+  libaom-dev
 curl -fsSL https://repo.jellyfin.org/jellyfin_team.gpg.key | gpg --dearmor -o /etc/apt/keyrings/jellyfin.gpg
 DPKG_ARCHITECTURE="$(dpkg --print-architecture)"
 export DPKG_ARCHITECTURE
 cat <<EOF >/etc/apt/sources.list.d/jellyfin.sources
 Types: deb
 URIs: https://repo.jellyfin.org/debian
-Suites: bookworm
+Suites: trixie
 Components: main
 Architectures: ${DPKG_ARCHITECTURE}
 Signed-By: /etc/apt/keyrings/jellyfin.gpg
@@ -80,7 +81,7 @@ $STD apt-get update
 $STD apt-get install -y jellyfin-ffmpeg7
 ln -s /usr/lib/jellyfin-ffmpeg/ffmpeg /usr/bin/ffmpeg
 ln -s /usr/lib/jellyfin-ffmpeg/ffprobe /usr/bin/ffprobe
-if [[ "$CTTYPE" == "0" ]]; then
+if [[ "$CTTYPE" == "0" && -d /dev/dri ]]; then
   chgrp video /dev/dri
   chmod 755 /dev/dri
   chmod 660 /dev/dri/*
@@ -93,6 +94,7 @@ read -r -p "${TAB3}Install OpenVINO dependencies for Intel HW-accelerated machin
 if [[ ${prompt,,} =~ ^(y|yes)$ ]]; then
   msg_info "Installing OpenVINO dependencies"
   touch ~/.openvino
+  $STD apt-get install -y --no-install-recommends patchelf
   tmp_dir=$(mktemp -d)
   $STD pushd "$tmp_dir"
   curl -fsSLO https://github.com/intel/intel-graphics-compiler/releases/download/igc-1.0.17384.11/intel-igc-core_1.0.17384.11_amd64.deb
@@ -100,6 +102,7 @@ if [[ ${prompt,,} =~ ^(y|yes)$ ]]; then
   curl -fsSLO https://github.com/intel/compute-runtime/releases/download/24.31.30508.7/intel-opencl-icd_24.31.30508.7_amd64.deb
   curl -fsSLO https://github.com/intel/compute-runtime/releases/download/24.31.30508.7/libigdgmm12_22.4.1_amd64.deb
   $STD apt install -y ./*.deb
+  $STD apt-mark hold libigdgmm12
   $STD popd
   rm -rf "$tmp_dir"
   dpkg -l | grep "intel-opencl-icd" | awk '{print $3}' >~/.intel_version
@@ -134,27 +137,6 @@ $STD sudo -u postgres psql -c "ALTER USER $DB_USER WITH SUPERUSER;"
 } >>~/"$APPLICATION".creds
 msg_ok "Set up Postgresql Database"
 
-msg_info "Installing Packages from Testing Repo"
-export APT_LISTCHANGES_FRONTEND=none
-export DEBIAN_FRONTEND=noninteractive
-$STD apt-get install -t testing --no-install-recommends -y \
-  libio-compress-brotli-perl \
-  libwebp7 \
-  libwebpdemux2 \
-  libwebpmux3 \
-  libhwy1t64 \
-  libdav1d-dev \
-  libhwy-dev \
-  libwebp-dev \
-  libaom-dev
-if [[ -f ~/.openvino ]]; then
-  $STD apt-get install -t testing -y patchelf
-fi
-msg_ok "Packages from Testing Repo Installed"
-
-$STD sudo -u postgres psql -c "ALTER DATABASE postgres REFRESH COLLATION VERSION;"
-$STD sudo -u postgres psql -c "ALTER DATABASE $DB_NAME REFRESH COLLATION VERSION;"
-
 msg_info "Compiling Custom Photo-processing Library (extreme patience)"
 LD_LIBRARY_PATH=/usr/local/lib
 export LD_RUN_PATH=/usr/local/lib
@@ -165,6 +147,7 @@ SOURCE_DIR=${STAGING_DIR}/image-source
 $STD git clone -b main "$BASE_REPO" "$BASE_DIR"
 mkdir -p "$SOURCE_DIR"
 
+msg_info "(1/5) Compiling libjxl"
 cd "$STAGING_DIR"
 SOURCE=${SOURCE_DIR}/libjxl
 JPEGLI_LIBJPEG_LIBRARY_SOVERSION="62"
@@ -202,7 +185,9 @@ ldconfig /usr/local/lib
 $STD make clean
 cd "$STAGING_DIR"
 rm -rf "$SOURCE"/{build,third_party}
+msg_ok "(1/5) Compiled libjxl"
 
+msg_info "(2/5) Compiling libheif"
 SOURCE=${SOURCE_DIR}/libheif
 : "${LIBHEIF_REVISION:=$(jq -cr '.revision' $BASE_DIR/server/sources/libheif.json)}"
 $STD git clone https://github.com/strukturag/libheif.git "$SOURCE"
@@ -225,7 +210,9 @@ ldconfig /usr/local/lib
 $STD make clean
 cd "$STAGING_DIR"
 rm -rf "$SOURCE"/build
+msg_ok "(2/5) Compiled libheif"
 
+msg_info "(3/5) Compiling libraw"
 SOURCE=${SOURCE_DIR}/libraw
 : "${LIBRAW_REVISION:=$(jq -cr '.revision' $BASE_DIR/server/sources/libraw.json)}"
 $STD git clone https://github.com/libraw/libraw.git "$SOURCE"
@@ -238,19 +225,23 @@ $STD make install
 ldconfig /usr/local/lib
 $STD make clean
 cd "$STAGING_DIR"
+msg_ok "(3/5) Compiled libraw"
 
+msg_info "(4/5) Compiling imagemagick"
 SOURCE=$SOURCE_DIR/imagemagick
 : "${IMAGEMAGICK_REVISION:=$(jq -cr '.revision' $BASE_DIR/server/sources/imagemagick.json)}"
 $STD git clone https://github.com/ImageMagick/ImageMagick.git "$SOURCE"
 cd "$SOURCE"
 $STD git reset --hard "$IMAGEMAGICK_REVISION"
-$STD ./configure --with-modules
+$STD ./configure --with-modules CPPFLAGS="-DMAGICK_LIBRAW_VERSION_TAIL=202502"
 $STD make -j"$(nproc)"
 $STD make install
 ldconfig /usr/local/lib
 $STD make clean
 cd "$STAGING_DIR"
+msg_ok "(4/5) Compiled imagemagick"
 
+msg_info "(5/5) Compiling libvips"
 SOURCE=$SOURCE_DIR/libvips
 : "${LIBVIPS_REVISION:=$(jq -cr '.revision' $BASE_DIR/server/sources/libvips.json)}"
 $STD git clone https://github.com/libvips/libvips.git "$SOURCE"
@@ -262,6 +253,7 @@ $STD ninja install
 ldconfig /usr/local/lib
 cd "$STAGING_DIR"
 rm -rf "$SOURCE"/build
+msg_ok "(5/5) Compiled libvips"
 {
   echo "imagemagick: $IMAGEMAGICK_REVISION"
   echo "libheif: $LIBHEIF_REVISION"
@@ -269,7 +261,7 @@ rm -rf "$SOURCE"/build
   echo "libraw: $LIBRAW_REVISION"
   echo "libvips: $LIBVIPS_REVISION"
 } >~/.immich_library_revisions
-msg_ok "Custom Photo-processing Library Compiled"
+msg_ok "Custom Photo-processing Libraries Compiled Successfully"
 
 INSTALL_DIR="/opt/${APPLICATION}"
 UPLOAD_DIR="${INSTALL_DIR}/upload"
@@ -280,9 +272,9 @@ GEO_DIR="${INSTALL_DIR}/geodata"
 mkdir -p "$INSTALL_DIR"
 mkdir -p {"${APP_DIR}","${UPLOAD_DIR}","${GEO_DIR}","${INSTALL_DIR}"/cache}
 
-fetch_and_deploy_gh_release "immich" "immich-app/immich" "tarball" "v1.139.4" "$SRC_DIR"
+fetch_and_deploy_gh_release "immich" "immich-app/immich" "tarball" "v2.0.1" "$SRC_DIR"
 
-msg_info "Installing ${APPLICATION} (more patience please)"
+msg_info "Installing ${APPLICATION} (patience)"
 
 cd "$SRC_DIR"/server
 export COREPACK_ENABLE_DOWNLOAD_PROMPT=0
@@ -300,6 +292,7 @@ sed -i 's|^start|./start|' "$APP_DIR"/bin/immich-admin
 
 # openapi & web build
 cd "$SRC_DIR"
+echo "packageImportMethod: hardlink" >>./pnpm-workspace.yaml
 $STD pnpm --filter @immich/sdk --filter immich-web --frozen-lockfile --force install
 $STD pnpm --filter @immich/sdk --filter immich-web build
 cp -a web/build "$APP_DIR"/www
@@ -312,17 +305,17 @@ $STD pnpm --filter @immich/cli --prod --no-optional deploy "$APP_DIR"/cli
 msg_ok "Installed Immich Server and Web Components"
 
 cd "$SRC_DIR"/machine-learning
-mkdir -p "$ML_DIR"
+$STD useradd -U -s /usr/sbin/nologin -r -M -d "$INSTALL_DIR" immich
+mkdir -p "$ML_DIR" && chown -R immich:immich "$INSTALL_DIR"
 export VIRTUAL_ENV="${ML_DIR}/ml-venv"
-$STD uv venv "$VIRTUAL_ENV"
 if [[ -f ~/.openvino ]]; then
   msg_info "Installing HW-accelerated machine-learning"
-  uv -q sync --extra openvino --no-cache --active
+  $STD sudo --preserve-env=VIRTUAL_ENV -nu immich uv sync --extra openvino --active -n -p python3.11 --managed-python
   patchelf --clear-execstack "${VIRTUAL_ENV}/lib/python3.11/site-packages/onnxruntime/capi/onnxruntime_pybind11_state.cpython-311-x86_64-linux-gnu.so"
   msg_ok "Installed HW-accelerated machine-learning"
 else
   msg_info "Installing machine-learning"
-  uv -q sync --extra cpu --no-cache --active
+  $STD sudo --preserve-env=VIRTUAL_ENV -nu immich uv sync --extra cpu --active -n -p python3.11 --managed-python
   msg_ok "Installed machine-learning"
 fi
 cd "$SRC_DIR"
@@ -361,8 +354,7 @@ mkdir -p /var/log/immich
 touch /var/log/immich/{web.log,ml.log}
 msg_ok "Installed ${APPLICATION}"
 
-msg_info "Creating user, env file, scripts & services"
-$STD useradd -U -s /usr/sbin/nologin -r -M -d "$INSTALL_DIR" immich
+msg_info "Modifying user, creating env file, scripts & services"
 usermod -aG video,render immich
 
 cat <<EOF >"${INSTALL_DIR}"/.env
@@ -451,15 +443,13 @@ WantedBy=multi-user.target
 EOF
 chown -R immich:immich "$INSTALL_DIR" /var/log/immich
 systemctl enable -q --now "$APPLICATION"-ml.service "$APPLICATION"-web.service
-msg_ok "Created user, env file, scripts and services"
+msg_ok "Modified user, created env file, scripts and services"
 
-sed -i "$ a VERSION_ID=12" /etc/os-release # otherwise the motd_ssh function will fail
-cp /etc/debian_version ~/.debian_version.bak
-sed -i 's/.*/13.0/' /etc/debian_version
 motd_ssh
 customize
 
 msg_info "Cleaning up"
 $STD apt-get -y autoremove
 $STD apt-get -y autoclean
+$STD apt clean -y
 msg_ok "Cleaned"

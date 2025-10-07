@@ -11,7 +11,7 @@ var_cpu="${var_cpu:-1}"
 var_ram="${var_ram:-512}"
 var_disk="${var_disk:-2}"
 var_os="${var_os:-debian}"
-var_version="${var_version:-12}"
+var_version="${var_version:-13}"
 var_unprivileged="${var_unprivileged:-1}"
 
 header_info "$APP"
@@ -28,8 +28,7 @@ function update_script() {
     exit
   fi
 
-  RELEASE=$(curl -fsSL https://api.github.com/repos/wavelog/wavelog/releases/latest | grep "tag_name" | awk '{print substr($2, 2, length($2)-3)}')
-  if [[ ! -f ~/.wavelog ]] || [[ "${RELEASE}" != "$(cat ~/.wavelog)" ]]; then
+  if check_for_gh_release "wavelog" "wavelog/wavelog"; then
     msg_info "Stopping Services"
     systemctl stop apache2
     msg_ok "Services Stopped"
@@ -46,7 +45,7 @@ function update_script() {
     rm -rf /opt/wavelog
     fetch_and_deploy_gh_release "wavelog" "wavelog/wavelog" "tarball"
 
-    msg_info "Updating ${APP} to ${RELEASE}"
+    msg_info "Updating Wavelog"
     rm -rf /opt/wavelog/install
     mv /opt/config.php /opt/wavelog/application/config/config.php
     mv /opt/database.php /opt/wavelog/application/config/database.php
@@ -58,15 +57,12 @@ function update_script() {
     chown -R www-data:www-data /opt/wavelog/
     find /opt/wavelog/ -type d -exec chmod 755 {} \;
     find /opt/wavelog/ -type f -exec chmod 664 {} \;
-    msg_ok "Updated ${APP}"
+    msg_ok "Updated Wavelog"
 
     msg_info "Starting Services"
     systemctl start apache2
     msg_ok "Started Services"
-
-    msg_ok "Updated Successfully"
-  else
-    msg_ok "No update required. ${APP} is already at ${RELEASE}"
+    msg_ok "Updated Successfully!"
   fi
   exit
 }

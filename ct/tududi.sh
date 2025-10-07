@@ -1,5 +1,5 @@
 #!/usr/bin/env bash
-source <(curl -s https://raw.githubusercontent.com/community-scripts/ProxmoxVE/main/misc/build.func)
+source <(curl -s https://raw.githubusercontent.com/brokkoli71/ProxmoxVE/main/misc/build.func)
 # Copyright (c) 2021-2025 community-scripts ORG
 # Author: vhsdream
 # License: MIT | https://github.com/community-scripts/ProxmoxVE/raw/main/LICENSE
@@ -28,18 +28,21 @@ function update_script() {
     exit
   fi
 
-  RELEASE=$(curl -fsSL https://api.github.com/repos/chrisvel/tududi/releases/latest | yq '.tag_name' | sed 's/^"v//;s/"$//')
-  if [[ "${RELEASE}" != "$(cat ~/.tududi 2>/dev/null)" ]] || [[ ! -f ~/.tududi ]]; then
+  NODE_VERSION="22" setup_nodejs
+
+  if check_for_gh_release "tududi" "chrisvel/tududi"; then
     msg_info "Stopping Service"
     systemctl stop tududi
     msg_ok "Stopped Service"
 
     msg_info "Remove and backup Files"
+    DB="$(sed -n '/^DB_FILE/s/[^=]*=//p' /opt/tududi/backend/.env)"
+    export DB_FILE="$DB"
     cp /opt/tududi/backend/.env /opt/tududi.env
     rm -rf /opt/tududi/backend/dist
     msg_ok "Backup and removed Files"
 
-    fetch_and_deploy_gh_release "tududi" "chrisvel/tududi"
+    fetch_and_deploy_gh_release "tududi" "chrisvel/tududi" "tarball" "latest" "/opt/tududi"
 
     msg_info "Updating ${APP}"
     cd /opt/tududi
@@ -50,14 +53,16 @@ function update_script() {
     mv ./public/locales ./backend/dist
     mv ./public/favicon.* ./backend/dist
     mv /opt/tududi.env /opt/tududi/.env
+    sed -i -e 's|/tududi$|/tududi/backend|' \
+      -e 's|npm run start|bash /opt/tududi/backend/cmd/start.sh|' \
+      /etc/systemd/system/tududi.service
+    systemctl daemon-reload
     msg_ok "Updated $APP"
 
     msg_info "Starting Service"
     systemctl start tududi
     msg_ok "Started Service"
     msg_ok "Updated Successfully"
-  else
-    msg_ok "Already up to date"
   fi
   exit
 }
